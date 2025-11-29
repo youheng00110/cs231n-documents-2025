@@ -73,7 +73,7 @@ class KNearestNeighbor(object):
                 # 计算第 i 个测试点与第 j 个训练点之间的 L2 距离，并将结果存储在 dists[i, j] 中。#
                 # 不要使用维度循环，也不要使用 np.linalg.norm()。                              #
                 ##############################################################################
-                pass
+                dists[i,j]=np.sqrt(np.sum((X[i,:]-self.X_train[j,:])**2))
         return dists
 
     def compute_distances_one_loop(self, X):
@@ -91,7 +91,7 @@ class KNearestNeighbor(object):
             # 计算第 i 个测试点与所有训练点之间的 L2 距离，并将结果存储在 dists[i, :] 中。#
             # 不要使用 np.linalg.norm()。                                              #
             ###########################################################################
-            pass
+            dists[i,:]=np.sqrt(np.sum((X[i,:]-self.X_train)**2,axis=1))
         return dists
 
     def compute_distances_no_loops(self, X):
@@ -109,7 +109,7 @@ class KNearestNeighbor(object):
         # 不要使用 scipy 中的函数，也不要使用 np.linalg.norm()。                          #
         # 提示：尝试使用矩阵乘法和两个广播求和来表示 L2 距离。                             #
         #################################################################################
-       
+        dists=np.sqrt(-2*np.dot(X,self.X_train.T)+np.sum(self.X_train**2,axis=1)[np.newaxis,:]+np.sum(X**2,axis=1)[:,np.newaxis])
         return dists
 
     def predict_labels(self, dists, k=1):
@@ -135,12 +135,14 @@ class KNearestNeighbor(object):
             # 邻点的标签。将这些标签存储在 closest_y 中。                             #
             # 提示：查看 numpy.argsort 函数。                                        #
             #########################################################################
+            index=np.argsort(dists[i,:])[:k]
+            closest_y=list(self.y_train[index])
             
             #########################################################################
             # 代办:                                                                 #
             # 现在你已经找到了 k 个最近邻的标签，你需要在 closest_y 列表中找到最常见的  #
             # 标签。将此标签存储在 y_pred[i] 中。如果出现平局，则选择较小的标签。       #
             #########################################################################
-            
+            y_pred[i]=np.bincount(closest_y).argmax()
             
         return y_pred
