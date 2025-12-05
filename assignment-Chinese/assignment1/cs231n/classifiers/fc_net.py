@@ -47,7 +47,14 @@ class TwoLayerNet(object):
         # 字典中，第一层权重和偏置使用键 'W1' 和 'b1'，第二层权重和偏置使用键 'W2' 和    #
         # 'b2'。                                                                      #
         ###############################################################################
-        
+        w=weight_scale * np.random.randn(input_dim, hidden_dim)
+        b=np.zeros(hidden_dim)
+        self.params['W1']=w
+        self.params['b1']=b
+        w2=weight_scale * np.random.randn(hidden_dim, num_classes)
+        b2=np.zeros(num_classes)
+        self.params['W2']=w2
+        self.params['b2']=b2
         ############################################################################
         #                             你的代码结束                                  #
         ############################################################################
@@ -69,7 +76,12 @@ class TwoLayerNet(object):
         - loss: 给出损失的标量值
         - grads: 与 self.params 有相同键的字典，将参数名称映射到损失相对于这些参数的梯度。
         """
-        scores = None
+        out1,cache1=affine_forward(X,self.params['W1'],self.params['b1'])
+        out_relu,cache_relu=relu_forward(out1)
+        out2,cache2=affine_forward(out_relu,self.params['W2'],self.params['b2'])
+        scores= out2
+
+        
         ##############################################################################
         # 代办: 实现两层网络的前向传播，计算 X 的类别分数，并将它们存储在 scores 变量中。#
         ##############################################################################
@@ -91,7 +103,17 @@ class TwoLayerNet(object):
         # 注意：为了确保你的实现与我们的匹配，并且你通过了自动化测试，确保你的 L2 正则化     #
         # 包含一个 0.5 的因子，以简化梯度表达式。                                         #
         #################################################################################
-
+        loss,dscores=softmax_loss(scores,y)
+        loss+=0.5*self.reg*(np.sum(self.params['W1']**2)+np.sum(self.params['W2']**2))
+        dout2,dw2,db2=affine_backward(dscores,cache2)
+        doutrelu=relu_backward(dout2,cache_relu)
+        dx,dw1,db1=affine_backward(doutrelu,cache1)
+        dw2+=self.reg*self.params['W2'] 
+        dw1+=self.reg*self.params['W1']
+        grads['W2']=dw2
+        grads['b2']=db2
+        grads['W1']=dw1         
+        grads['b1']=db1
         ############################################################################
         #                             你的代码结束                                  #
         ############################################################################
