@@ -19,7 +19,9 @@ def affine_forward(x, w, b):
     - out: 输出，形状为(N, M)
     - cache: 缓存数据 (x, w, b)
     """
-    out = None
+    assert w is not None and b is not None, "affine_forward 收到 None 参数"
+    x_reshaped = x.reshape(x.shape[0], -1)  # 将输入重塑为(N, D)
+    out = np.dot(x_reshaped, w) + b  # 计算仿射变换
     ###########################################################################
     # 待办：实现仿射层的前向传播。将结果存储在out中。你需要将输入重塑为行向量。    #
     ###########################################################################
@@ -48,7 +50,8 @@ def affine_backward(dout, cache):
     - db: 关于b的梯度，形状为(M,)
     """
     x, w, b = cache
-    dx, dw, db = None, None, None
+    x_reshaped = x.reshape(x.shape[0], -1)  # 将输入重塑为(N, D)
+    dx, dw, db = np.dot(dout, w.T).reshape(x.shape), np.dot(x_reshaped.T, dout), np.sum(dout, axis=0)
     ###########################################################################
     # 待办：实现仿射层的反向传播。                                             #
     ###########################################################################
@@ -70,7 +73,7 @@ def relu_forward(x):
     - out: 输出，与x形状相同
     - cache: 缓存x
     """
-    out = None
+    out = np.maximum(0, x)
     ###########################################################################
     # 待办：实现ReLU的前向传播。                                               #
     ###########################################################################
@@ -93,7 +96,8 @@ def relu_backward(dout, cache):
     返回：
     - dx: 关于x的梯度
     """
-    dx, x = None, cache
+    x = cache
+    dx, x = dout * (x > 0), cache
     ###########################################################################
     # 待办：实现ReLU的反向传播。                                               #
     ###########################################################################
@@ -653,7 +657,13 @@ def softmax_loss(x, y):
     - loss: 损失标量
     - dx: 损失关于x的梯度
     """
-    loss, dx = None, None
+    x_shifted = x - np.max(x, axis=1, keepdims=True)
+    x_probs = np.exp(x_shifted) / np.sum((np.exp(x_shifted)), axis=1, keepdims=True)
+    loss = -np.sum(np.log(x_probs[np.arange(x.shape[0]), y])) / x.shape[0]
+    dx = x_probs.copy()
+    dx[np.arange(x.shape[0]), y] -= 1
+    dx /= x.shape[0]
+   
 
     ###########################################################################
     # 待办：从A1中复制你的解决方案。
