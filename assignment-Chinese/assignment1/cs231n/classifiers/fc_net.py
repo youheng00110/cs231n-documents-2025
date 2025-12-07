@@ -204,6 +204,26 @@ class FullyConnectedNet(object):
         # 层存储在 gamma2 和 beta2 中，依此类推。比例参数应初始化为一，偏移参数应初始化  #
         # 为零。                                                                     #
         ##############################################################################
+        ##初始化1：
+        prev_dims=input_dim
+        for i,hdim in enumerate(hidden_dims):
+            self.params[f'W{i+1}']=np.random.randn(prev_dims,hdim)*weight_scale
+            self.params[f'b{i+1}']=np.zeros(hdim)
+            prev_dims=hdim
+
+        ##初始化2
+        for i,hdim in enumerate(hidden_dims):
+            if self.normalization in ["batchnorm", "layernorm"]:
+            # gamma 初始化为 1
+                self.params[f'gamma{i+1}'] = np.ones(hdim)
+
+            # beta 初始化为 0
+                self.params[f'beta{i+1}'] = np.zeros(hdim)
+        prev_dims=hdim
+            
+        final=self.num_layers
+        self.params[f'W{final}']=np.random.randn(prev_dims,num_classes)*weight_scale
+        self.params[f'b{final}']=np.zeros(num_classes)
 
         ############################################################################
         #                             你的代码结束                                  #
@@ -266,6 +286,32 @@ class FullyConnectedNet(object):
         # 当使用批量归一化时，你需要将 self.bn_params[0] 传递给第一个批量归一化层的前向    #
         # 传播，self.bn_params[1] 传递给第二个批量归一化层的前向传播，依此类推。          #
         ###############################################################################
+        for i in range(1,self.num_layers):
+            W=self.params[f'W{i}']
+            b=self.params[f'b{i}']
+            if self.normalization=='batchnorm':
+                gamma=self.params[f'gamma{i}']
+                beta=self.params[f'beta{i}']
+                afout,cache=batchnorm_forward(X,W,b,gamma,beta,self.bn_params[i-1])
+                loss+=0.5*self.reg*(np.sum(W**2))
+            elif self.normalization=='layernorm':
+                gamma=self.params[f'gamma{i}']
+                beta=self.params[f'beta{i}']
+                afoutout,cache=layernorm_forward(X,W,b,gamma,beta,self.bn_params[i-1])
+                loss+=0.5*self.reg*(np.sum(W**2))
+            reluout,relu_cache=relu_forward(afout)
+            X=reluout
+            if self.use_dropout:
+                X,dropout_cache=dropout_forward(X,self.dropout_param)
+                cache.append(dropout_cache)    
+            cache.append(relu_cache)
+            self.params[f'cache{i}']=cache
+        final=self.num_layers
+        W=self.params[f'W{final}']
+        b=self.params[f'b{final}']
+        scores,final_cache=affine_forward(X,W,b)
+        loss+=0.5*self.reg*(np.sum(W**2))
+        self.params[f'cache{final}']=final_cache
 
         ############################################################################
         #                             你的代码结束                                  #
@@ -286,6 +332,35 @@ class FullyConnectedNet(object):
         # 注意：为了确保你的实现与我们的匹配，并且你通过了自动化测试，确保你的 L2 正则化     #
         # 包含一个 0.5 的因子，以简化梯度表达式。                                         #
         #################################################################################
+        for i in range(self.num_layers,0,-1):
+            if i==self.num_layers:
+                final_cache=self.params[f'cache{i}']
+                loss,dscores=softmax_loss(scores,y)
+                dx,dw,db=affine_backward(dscores,final_cache)
+                dw+=self.reg*self.params[f'W{i}']
+                grads[f'W{i}']=dw
+                grads[f'b{i}']=db
+            else:
+                cache=self.params[f'cache{i}']
+                if self.use_dropout:
+                    dropout_cache=cache.pop()
+                    dx=dropout_backward(dx,dropout_cache)
+                relu_cache=cache.pop()
+                da=relu_backward(dx,relu_cache)
+                if self.normalization=='batchnorm':
+                    dx,dw,db,dgamma,dbeta=batchnorm_backward(da,cache)
+                    grads[f'gamma{i}']=dgamma
+                    grads[f'beta{i}']=dbeta
+                elif self.normalization=='layernorm':
+                    dx,dw,db,dgamma,dbeta=layernorm_backward(da,cache)
+                    grads[f'gamma{i}']=dgamma
+                    grads[f'beta{i}']=dbeta
+                else:
+                    dx,dw,db=affine_backward(da,cache)
+                dw+=self.reg*self.params[f'W{i}']
+                grads[f'W{i}']=dw
+                grads[f'b{i}']=db
+
 
         ############################################################################
         #                             你的代码结束                                  #
@@ -316,22 +391,22 @@ class FullyConnectedNet(object):
             self.params = params
             print(fname, "已加载。")
             return True
-        
 
 
 
 
 
-      
 
-    
-        
-        
-        
-       
-        
-        
-        
-        
-        
-        
+
+
+
+
+
+
+
+
+
+
+
+
+

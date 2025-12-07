@@ -19,7 +19,7 @@ def affine_forward(x, w, b):
     - out: 输出，形状为(N, M)
     - cache: 缓存数据 (x, w, b)
     """
-    assert w is not None and b is not None, "affine_forward 收到 None 参数"
+    
     x_reshaped = x.reshape(x.shape[0], -1)  # 将输入重塑为(N, D)
     out = np.dot(x_reshaped, w) + b  # 计算仿射变换
     ###########################################################################
