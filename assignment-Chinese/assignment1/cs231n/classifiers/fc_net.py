@@ -286,32 +286,42 @@ class FullyConnectedNet(object):
         # 当使用批量归一化时，你需要将 self.bn_params[0] 传递给第一个批量归一化层的前向    #
         # 传播，self.bn_params[1] 传递给第二个批量归一化层的前向传播，依此类推。          #
         ###############################################################################
-        for i in range(1,self.num_layers):
-            W=self.params[f'W{i}']
-            b=self.params[f'b{i}']
-            if self.normalization=='batchnorm':
-                gamma=self.params[f'gamma{i}']
-                beta=self.params[f'beta{i}']
-                afout,cache=batchnorm_forward(X,W,b,gamma,beta,self.bn_params[i-1])
-                loss+=0.5*self.reg*(np.sum(W**2))
-            elif self.normalization=='layernorm':
-                gamma=self.params[f'gamma{i}']
-                beta=self.params[f'beta{i}']
-                afoutout,cache=layernorm_forward(X,W,b,gamma,beta,self.bn_params[i-1])
-                loss+=0.5*self.reg*(np.sum(W**2))
-            reluout,relu_cache=relu_forward(afout)
-            X=reluout
+        caches = []
+        out = X
+        for i in range(1, self.num_layers):
+            W = self.params[f'W{i}']
+            b = self.params[f'b{i}']
+            
+            # 1. Affine
+            out, fc_cache = affine_forward(out, W, b)
+            
+            # 2. Normalization (可选)
+            norm_cache = None
+            if self.normalization == 'batchnorm':
+                gamma = self.params[f'gamma{i}']
+                beta = self.params[f'beta{i}']
+                out, norm_cache = batchnorm_forward(out, gamma, beta, self.bn_params[i-1])
+            elif self.normalization == 'layernorm':
+                gamma = self.params[f'gamma{i}']
+                beta = self.params[f'beta{i}']
+                out, norm_cache = layernorm_forward(out, gamma, beta, self.bn_params[i-1])
+            
+            # 3. ReLU
+            out, relu_cache = relu_forward(out)
+            
+            # 4. Dropout (可选)
+            dropout_cache = None
             if self.use_dropout:
-                X,dropout_cache=dropout_forward(X,self.dropout_param)
-                cache.append(dropout_cache)    
-            cache.append(relu_cache)
-            self.params[f'cache{i}']=cache
-        final=self.num_layers
-        W=self.params[f'W{final}']
-        b=self.params[f'b{final}']
-        scores,final_cache=affine_forward(X,W,b)
-        loss+=0.5*self.reg*(np.sum(W**2))
-        self.params[f'cache{final}']=final_cache
+                out, dropout_cache = dropout_forward(out, self.dropout_param)
+            
+            # 保存这一层的所有 cache
+            caches.append((fc_cache, norm_cache, relu_cache, dropout_cache))
+
+        # 最后一层
+        W_final = self.params[f'W{self.num_layers}']
+        b_final = self.params[f'b{self.num_layers}']
+        scores, final_cache = affine_forward(out, W_final, b_final)
+        caches.append((final_cache,))
 
         ############################################################################
         #                             你的代码结束                                  #
@@ -332,34 +342,34 @@ class FullyConnectedNet(object):
         # 注意：为了确保你的实现与我们的匹配，并且你通过了自动化测试，确保你的 L2 正则化     #
         # 包含一个 0.5 的因子，以简化梯度表达式。                                         #
         #################################################################################
-        for i in range(self.num_layers,0,-1):
-            if i==self.num_layers:
-                final_cache=self.params[f'cache{i}']
-                loss,dscores=softmax_loss(scores,y)
-                dx,dw,db=affine_backward(dscores,final_cache)
-                dw+=self.reg*self.params[f'W{i}']
-                grads[f'W{i}']=dw
-                grads[f'b{i}']=db
+        for i in range(self.num_layers, 0, -1):
+            if i == self.num_layers:
+                final_cache = caches[i-1][0]
+                loss, dscores = softmax_loss(scores, y)
+                for j in range(1, self.num_layers + 1):
+                    loss += 0.5 * self.reg * np.sum(self.params[f'W{j}'] ** 2)
+                dx, dw, db = affine_backward(dscores, final_cache)
+                dw += self.reg * self.params[f'W{i}']
+                grads[f'W{i}'] = dw
+                grads[f'b{i}'] = db
             else:
-                cache=self.params[f'cache{i}']
+                fc_cache, norm_cache, relu_cache, dropout_cache = caches[i-1]
                 if self.use_dropout:
-                    dropout_cache=cache.pop()
-                    dx=dropout_backward(dx,dropout_cache)
-                relu_cache=cache.pop()
-                da=relu_backward(dx,relu_cache)
-                if self.normalization=='batchnorm':
-                    dx,dw,db,dgamma,dbeta=batchnorm_backward(da,cache)
-                    grads[f'gamma{i}']=dgamma
-                    grads[f'beta{i}']=dbeta
-                elif self.normalization=='layernorm':
-                    dx,dw,db,dgamma,dbeta=layernorm_backward(da,cache)
-                    grads[f'gamma{i}']=dgamma
-                    grads[f'beta{i}']=dbeta
+                    dx = dropout_backward(dx, dropout_cache)
+                dx = relu_backward(dx, relu_cache)
+                if self.normalization == 'batchnorm':
+                    dx, dw, db, dgamma, dbeta = batchnorm_backward(dx, norm_cache)
+                    grads[f'gamma{i}'] = dgamma
+                    grads[f'beta{i}'] = dbeta
+                elif self.normalization == 'layernorm':
+                    dx, dw, db, dgamma, dbeta = layernorm_backward(dx, norm_cache)
+                    grads[f'gamma{i}'] = dgamma
+                    grads[f'beta{i}'] = dbeta
                 else:
-                    dx,dw,db=affine_backward(da,cache)
-                dw+=self.reg*self.params[f'W{i}']
-                grads[f'W{i}']=dw
-                grads[f'b{i}']=db
+                    dx, dw, db = affine_backward(dx, fc_cache)
+                dw += self.reg * self.params[f'W{i}']
+                grads[f'W{i}'] = dw
+                grads[f'b{i}'] = db
 
 
         ############################################################################
