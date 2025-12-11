@@ -163,7 +163,15 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # 注意，尽管你需要跟踪滑动方差，但你应基于标准差（方差的平方根）对数据进行归一化！#
         # 参考原始论文（https://arxiv.org/abs/1502.03167）可能会有帮助。              #
         #############################################################################
-        pass
+        #batchnorm
+        sample_mean = np.mean(x, axis=0)
+        sample_var = np.var(x, axis=0)
+        x_normalized=(x-sample_mean)/np.sqrt(sample_var+eps)
+        out=gamma*x_normalized+beta
+        ##指数加权移动平均值
+        running_mean=momentum*running_mean+(1-momentum)*sample_mean
+        running_var=momentum*running_var+(1-momentum)*sample_var
+        cache = (x, x_normalized, sample_mean, sample_var, gamma, eps)
         #######################################################################
         #                           你的代码结束                                #
         #######################################################################
@@ -173,7 +181,8 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # 使用滑动均值和方差归一化输入数据，然后使用gamma和beta进行缩放和偏移。   #
         # 将结果存储在out变量中。                                              #
         #######################################################################
-        pass
+        x_normalized=(x-running_mean)/np.sqrt(running_var+eps)
+        out=gamma*x_normalized+beta
         #######################################################################
         #                          你的代码结束                                 #
         #######################################################################
@@ -207,7 +216,10 @@ def batchnorm_backward(dout, cache):
     # 待办：实现批量归一化的反向传播。将结果存储在dx、dgamma和dbeta变量中。       #
     # 参考原始论文（https://arxiv.org/abs/1502.03167）可能会有帮助。            #
     ###########################################################################
-
+    x, x_normalized, sample_mean, sample_var, gamma, eps = cache
+    dbeta=np.sum(dout, axis=0)
+    dgamma=np.sum(dout*x_normalized, axis=0)
+    dx_normalized=dout*gamma
     ###########################################################################
     #                             你的代码结束                                #
     ###########################################################################
