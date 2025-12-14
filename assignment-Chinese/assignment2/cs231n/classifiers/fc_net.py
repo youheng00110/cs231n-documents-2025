@@ -61,13 +61,26 @@ class FullyConnectedNet(object):
         # 第二层使用W2和b2，依此类推。权重应从以0为中心、标准差等于weight_scale的正态分布初始化。  #
         # 偏置应初始化为零。                                                                   #
         #                                                                                     #
-        # 当使用批归一化时，第一层的缩放和偏移参数存储在gamma1和beta1中；第二层使用gamma2和beta2，#
-        # 依此类推。缩放参数应初始化为1，偏移参数应初始化为0。                                   #
+        # 当使用批归一化/层标准化时，第一层的缩放和偏移参数存储在gamma1和beta1中；第二层使用      #
+        # gamma2和beta2，依此类推。缩放参数应初始化为1，偏移参数应初始化为0。                     #
         ######################################################################################
-        # 
-        ############################################################################
-        #                             你的代码结束                                 #
-        ############################################################################
+
+        # 所有层的维度列表：输入 -> 隐藏层... -> 输出
+        layer_dims = [input_dim] + list(hidden_dims) + [num_classes]
+        for i in range(1, self.num_layers + 1):
+            w_key = "W%d" % i
+            b_key = "b%d" % i
+            self.params[w_key] = weight_scale * np.random.randn(
+                layer_dims[i - 1], layer_dims[i]
+            )
+            self.params[b_key] = np.zeros(layer_dims[i])
+
+            # 对除最后一层外的每一层，如果使用归一化，则初始化 gamma / beta
+            if i != self.num_layers and self.normalization in ["batchnorm", "layernorm"]:
+                gamma_key = "gamma%d" % i
+                beta_key = "beta%d" % i
+                self.params[gamma_key] = np.ones(layer_dims[i])
+                self.params[beta_key] = np.zeros(layer_dims[i])
 
         # 当使用dropout时，我们需要向每个dropout层传递一个dropout_param字典，
         # 以便该层知道dropout概率和模式（训练/测试）。可以向每个dropout层传递相同的dropout_param。
@@ -121,16 +134,67 @@ class FullyConnectedNet(object):
         #                                                                           #
         # 使用dropout时，需要向每个dropout前向传播传递self.dropout_param。            #
         #                                                                           #
-        # 使用批归一化时，需要向第一个批归一化层的前向传播传递self.bn_params[0]，向第二个#
-        # 批归一化层的前向传播传递self.bn_params[1]，依此类推。                       #
+        # 使用批归一化/层标准化时，需要向第一个归一化层的前向传播传递self.bn_params[0]， #
+        # 向第二个归一化层的前向传播传递self.bn_params[1]，依此类推。                   #
         ############################################################################
-        # 
-        ############################################################################
-        #                             你的代码结束                                 #
-        ############################################################################
+
+        # 将输入展平成 (N, D)
+        out = X.reshape(X.shape[0], -1)
+
+        # 为反向传播保存各层缓存
+        affine_caches = {}
+        norm_caches = {}
+        relu_caches = {}
+        dropout_caches = {}
+
+        # 前 (L-1) 个隐藏层: {affine - [norm] - relu - [dropout]}
+        for i in range(1, self.num_layers):
+            w_key = "W%d" % i
+            b_key = "b%d" % i
+
+            out, fc_cache = affine_forward(out, self.params[w_key], self.params[b_key])
+            affine_caches[i] = fc_cache
+
+            # 归一化（可选）
+            if self.normalization == "batchnorm":
+                gamma_key = "gamma%d" % i
+                beta_key = "beta%d" % i
+                out, norm_cache = batchnorm_forward(
+                    out,
+                    self.params[gamma_key],
+                    self.params[beta_key],
+                    self.bn_params[i - 1],
+                )
+                norm_caches[i] = norm_cache
+            elif self.normalization == "layernorm":
+                gamma_key = "gamma%d" % i
+                beta_key = "beta%d" % i
+                out, norm_cache = layernorm_forward(
+                    out,
+                    self.params[gamma_key],
+                    self.params[beta_key],
+                    self.bn_params[i - 1],
+                )
+                norm_caches[i] = norm_cache
+
+            # ReLU
+            out, relu_cache = relu_forward(out)
+            relu_caches[i] = relu_cache
+
+            # Dropout（可选）
+            if self.use_dropout:
+                out, do_cache = dropout_forward(out, self.dropout_param)
+                dropout_caches[i] = do_cache
+
+        # 最后一层: 仅 affine
+        w_key = "W%d" % self.num_layers
+        b_key = "b%d" % self.num_layers
+        scores, fc_cache = affine_forward(out, self.params[w_key], self.params[b_key])
+        affine_caches[self.num_layers] = fc_cache
 
         # 如果是测试模式，提前返回
         if mode == "test":
+            print("scores.shape in test mode:", scores.shape)
             return scores
 
         loss, grads = 0.0, {}
@@ -143,9 +207,53 @@ class FullyConnectedNet(object):
         # 注意：为确保你的实现与我们的一致并通过自动测试，请确保你的L2正则化包含0.5的因子，      #
         # 以简化梯度的表达式。                                                               #
         ####################################################################################
-        # 
-        ############################################################################
-        #                             你的代码结束                                 #
-        ############################################################################
+
+        # softmax 损失
+        loss, dscores = softmax_loss(scores, y)
+
+        # L2 正则化项
+        for i in range(1, self.num_layers + 1):
+            w_key = "W%d" % i
+            W = self.params[w_key]
+            loss += 0.5 * self.reg * np.sum(W * W)
+
+        # 反向传播: 最后一层 affine
+        w_key = "W%d" % self.num_layers
+        b_key = "b%d" % self.num_layers
+        dx, dW, db = affine_backward(dscores, affine_caches[self.num_layers])
+        grads[w_key] = dW + self.reg * self.params[w_key]
+        grads[b_key] = db
+
+        # 反向传播: 从第 (L-1) 层到第 1 层
+        dout = dx
+        for i in range(self.num_layers - 1, 0, -1):
+            # Dropout 反向传播（如果使用）
+            if self.use_dropout and i in dropout_caches:
+                dout = dropout_backward(dout, dropout_caches[i])
+
+            # ReLU 反向传播
+            dout = relu_backward(dout, relu_caches[i])
+
+            # 归一化反向传播（如果使用）
+            if self.normalization == "batchnorm" and i in norm_caches:
+                gamma_key = "gamma%d" % i
+                beta_key = "beta%d" % i
+                dout, dgamma, dbeta = batchnorm_backward(dout, norm_caches[i])
+                grads[gamma_key] = dgamma
+                grads[beta_key] = dbeta
+            elif self.normalization == "layernorm" and i in norm_caches:
+                gamma_key = "gamma%d" % i
+                beta_key = "beta%d" % i
+                dout, dgamma, dbeta = layernorm_backward(dout, norm_caches[i])
+                grads[gamma_key] = dgamma
+                grads[beta_key] = dbeta
+
+            # affine 反向传播
+            w_key = "W%d" % i
+            b_key = "b%d" % i
+            dx, dW, db = affine_backward(dout, affine_caches[i])
+            grads[w_key] = dW + self.reg * self.params[w_key]
+            grads[b_key] = db
+            dout = dx
 
         return loss, grads
