@@ -1,5 +1,25 @@
 from .layers import *
-from .fast_layers import *  # 导入快速实现的层（如快速卷积、池化等）
+
+# 尝试导入快速层，如果失败则使用朴素实现
+try:
+    from .fast_layers import *
+    USE_FAST_LAYERS = True
+except (ImportError, NameError) as e:
+    # Cython扩展未编译或运行时缺少依赖，回退到朴素实现
+    USE_FAST_LAYERS = False
+    print(f"⚠ 快速层不可用，使用朴素实现: {e}")
+    
+# 设置实际使用的函数（快速版或朴素版）
+if USE_FAST_LAYERS:
+    conv_forward_impl = conv_forward_fast
+    conv_backward_impl = conv_backward_fast
+    max_pool_forward_impl = max_pool_forward_fast
+    max_pool_backward_impl = max_pool_backward_fast
+else:
+    conv_forward_impl = conv_forward_naive
+    conv_backward_impl = conv_backward_naive
+    max_pool_forward_impl = max_pool_forward_naive
+    max_pool_backward_impl = max_pool_backward_naive
 
 
 def affine_relu_forward(x, w, b):
@@ -42,7 +62,7 @@ def conv_relu_forward(x, w, b, conv_param):
     - out: ReLU的输出
     - cache: 用于反向传播的缓存数据
     """
-    a, conv_cache = conv_forward_fast(x, w, b, conv_param)  # 快速卷积：a = conv(x, w, b)
+    a, conv_cache = conv_forward_impl(x, w, b, conv_param)  # 卷积：a = conv(x, w, b)
     out, relu_cache = relu_forward(a)  # ReLU激活：out = max(0, a)
     cache = (conv_cache, relu_cache)  # 缓存卷积层和ReLU层的中间数据
     return out, cache
@@ -54,7 +74,7 @@ def conv_relu_backward(dout, cache):
     """
     conv_cache, relu_cache = cache  # 从缓存中提取卷积层和ReLU层的数据
     da = relu_backward(dout, relu_cache)  # ReLU反向传播：计算损失对a的梯度
-    dx, dw, db = conv_backward_fast(da, conv_cache)  # 快速卷积反向传播：计算损失对x、w、b的梯度
+    dx, dw, db = conv_backward_impl(da, conv_cache)  # 卷积反向传播：计算损失对x、w、b的梯度
     return dx, dw, db
 
 
@@ -73,7 +93,7 @@ def conv_bn_relu_forward(x, w, b, gamma, beta, conv_param, bn_param):
     - out: ReLU输出
     - cache: 缓存数据（卷积、BN、ReLU的中间结果）
     """
-    a, conv_cache = conv_forward_fast(x, w, b, conv_param)  # 卷积：a = conv(x, w, b)
+    a, conv_cache = conv_forward_impl(x, w, b, conv_param)  # 卷积：a = conv(x, w, b)
     an, bn_cache = spatial_batchnorm_forward(a, gamma, beta, bn_param)  # 空间BN：an = BN(a, gamma, beta)
     out, relu_cache = relu_forward(an)  # ReLU激活：out = max(0, an)
     cache = (conv_cache, bn_cache, relu_cache)  # 缓存三层的中间数据
@@ -87,7 +107,7 @@ def conv_bn_relu_backward(dout, cache):
     conv_cache, bn_cache, relu_cache = cache  # 提取三层缓存数据
     dan = relu_backward(dout, relu_cache)  # ReLU反向传播：损失对an的梯度
     da, dgamma, dbeta = spatial_batchnorm_backward(dan, bn_cache)  # BN反向传播：损失对a、gamma、beta的梯度
-    dx, dw, db = conv_backward_fast(da, conv_cache)  # 卷积反向传播：损失对x、w、b的梯度
+    dx, dw, db = conv_backward_impl(da, conv_cache)  # 卷积反向传播：损失对x、w、b的梯度
     return dx, dw, db, dgamma, dbeta
 
 
@@ -104,9 +124,9 @@ def conv_relu_pool_forward(x, w, b, conv_param, pool_param):
     - out: 池化层的输出
     - cache: 用于反向传播的缓存数据
     """
-    a, conv_cache = conv_forward_fast(x, w, b, conv_param)  # 卷积：a = conv(x, w, b)
+    a, conv_cache = conv_forward_impl(x, w, b, conv_param)  # 卷积：a = conv(x, w, b)
     s, relu_cache = relu_forward(a)  # ReLU激活：s = max(0, a)
-    out, pool_cache = max_pool_forward_fast(s, pool_param)  # 快速最大池化：out = pool(s)
+    out, pool_cache = max_pool_forward_impl(s, pool_param)  # 最大池化：out = pool(s)
     cache = (conv_cache, relu_cache, pool_cache)  # 缓存卷积、ReLU、池化层的中间数据
     return out, cache
 
@@ -116,7 +136,7 @@ def conv_relu_pool_backward(dout, cache):
     conv-relu-pool便捷层的反向传播
     """
     conv_cache, relu_cache, pool_cache = cache  # 从缓存中提取三层的数据
-    ds = max_pool_backward_fast(dout, pool_cache)  # 池化反向传播：计算损失对s的梯度
+    ds = max_pool_backward_impl(dout, pool_cache)  # 池化反向传播：计算损失对s的梯度
     da = relu_backward(ds, relu_cache)  # ReLU反向传播：计算损失对a的梯度
-    dx, dw, db = conv_backward_fast(da, conv_cache)  # 卷积反向传播：计算损失对x、w、b的梯度
+    dx, dw, db = conv_backward_impl(da, conv_cache)  # 卷积反向传播：计算损失对x、w、b的梯度
     return dx, dw, db
