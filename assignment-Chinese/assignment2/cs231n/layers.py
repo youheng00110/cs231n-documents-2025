@@ -477,7 +477,15 @@ def conv_forward_naive(x, w, b, conv_param):
     ###########################################################################
     # 实现卷积前向传播。提示：可以使用np.pad函数进行填充。                       #
     ###########################################################################
-    # 
+    H_out=1+(x.shape[2]+2*conv_param['pad']-w.shape[2])//conv_param['stride']
+    W_out=1+(x.shape[3]+2*conv_param['pad']-w.shape[3])//conv_param['stride']
+    out=np.zeros((x.shape[0],w.shape[0],H_out,W_out))
+    x_pad=np.pad(x,((0,0),(0,0),(conv_param['pad'],conv_param['pad']),(conv_param['pad'],conv_param['pad'])),mode="constant")
+    for n in range(x.shape[0]):
+        for i in range(H_out):
+            for j in range(W_out):
+                for f in range(w.shape[0]):
+                    out[n,f,i,j]=x_pad[n,:,i*conv_param['stride']:i*conv_param['stride']+w.shape[2],j*conv_param['stride']:j*conv_param['stride']+w.shape[3]].flatten().dot(w[f].flatten())+b[f]
     ###########################################################################
     #                             你的代码结束                                 #
     ###########################################################################
@@ -501,7 +509,18 @@ def conv_backward_naive(dout, cache):
     ###########################################################################
     # 实现卷积反向传播。                                                       #
     ###########################################################################
-    # 
+    x, w, b, conv_param = cache
+    db=np.sum(dout,axis=(0,2,3))
+    dw=np.zeros_like(w)
+    dx_pad=np.zeros((x.shape[0],x.shape[1],x.shape[2]+2*conv_param['pad'],x.shape[3]+2*conv_param['pad']))
+    x_pad=np.pad(x,((0,0),(0,0),(conv_param['pad'],conv_param['pad']),(conv_param['pad'],conv_param['pad'])),mode="constant")
+    for n in range(x.shape[0]):
+        for i in range(dout.shape[2]):
+            for j in range(dout.shape[3]):
+                for f in range(w.shape[0]):
+                    dw[f]+=dout[n,f,i,j]*x_pad[n,:,i*conv_param['stride']:i*conv_param['stride']+w.shape[2],j*conv_param['stride']:j*conv_param['stride']+w.shape[3]]
+                    dx_pad[n,:,i*conv_param['stride']:i*conv_param['stride']+w.shape[2],j*conv_param['stride']:j*conv_param['stride']+w.shape[3]]+=dout[n,f,i,j]*w[f]
+    dx=dx_pad[:,:,conv_param['pad']:dx_pad.shape[2]-conv_param['pad'],conv_param['pad']:dx_pad.shape[3]-conv_param['pad']]
     ###########################################################################
     #                             你的代码结束                                 #
     ###########################################################################
@@ -532,7 +551,15 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     # 实现最大池化前向传播。                                                   #
     ###########################################################################
-    # 
+    N,C,H,W=x.shape
+    out=np.zeros((x.shape[0],x.shape[1],  1 + (H - pool_param['pool_height']) // pool_param['stride'],1 + (W - pool_param['pool_width']) // pool_param['stride']))
+    for n in range(out.shape[0]):
+        for c in range(out.shape[1]):
+            for i in range(out.shape[2]):
+                for j in range(out.shape[3]):
+                    out[n,c,i,j]=np.max(x[n,c,
+                                          i*pool_param['stride']:i*pool_param['stride']+pool_param['pool_height'],
+                                          j*pool_param['stride']:j*pool_param['stride']+pool_param['pool_width']])
     ###########################################################################
     #                             你的代码结束                                 #
     ###########################################################################
@@ -554,7 +581,18 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # 实现最大池化反向传播。                                                   #
     ###########################################################################
-    # 
+    x, pool_param = cache
+    dx=np.zeros_like(x)
+    out=np.zeros_like(dout)
+    for n in range(dout.shape[0]):
+        for c in range(dout.shape[1]):
+            for i in range(dout.shape[2]):
+                for j in range(dout.shape[3]):
+                    window=x[n,c,i*pool_param['stride']:i*pool_param['stride']+pool_param['pool_height'],j*pool_param['stride']:j*pool_param['stride']+pool_param['pool_width']]
+                    mask=(window==np.max(window))
+                    dx[n,c,
+                       i*pool_param['stride']:i*pool_param['stride']+pool_param['pool_height'],
+                       j*pool_param['stride']:j*pool_param['stride']+pool_param['pool_width']]+=dout[n,c,i,j]*mask
     ###########################################################################
     #                             你的代码结束                                 #
     ###########################################################################
