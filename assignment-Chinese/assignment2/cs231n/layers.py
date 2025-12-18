@@ -626,7 +626,10 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
     # 提示：可通过调用上面实现的标准批归一化函数来实现空间批归一化。              #
     # 实现应该非常简短；我们的实现不到5行。                                     #
     ###########################################################################
-    # 
+    N,C,H,W=x.shape
+    x_reshaped=x.transpose(0,2,3,1).reshape(-1,C)
+    x_norm,cache=batchnorm_forward(x_reshaped,gamma,beta,bn_param)
+    out=x_norm.reshape(N,H,W,C).transpose(0,3,1,2)
     ###########################################################################
     #                             你的代码结束                                 #
     ###########################################################################
@@ -654,7 +657,10 @@ def spatial_batchnorm_backward(dout, cache):
     # 提示：可通过调用上面实现的标准批归一化函数来实现空间批归一化。              #
     # 实现应该非常简短；我们的实现不到5行。                                     #
     ###########################################################################
-    # 
+    N,C,H,W=dout.shape
+    dout_reshaped=dout.transpose(0,2,3,1).reshape(-1,C)
+    dx_norm,dgamma,dbeta=batchnorm_backward_alt(dout_reshaped,cache)
+    dx=dx_norm.reshape(N,H,W,C).transpose(0,3,1,2)
     ###########################################################################
     #                             你的代码结束                                 #
     ###########################################################################
@@ -687,7 +693,15 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     # 这与层归一化的实现极其相似。                                              #
     # 具体来说，思考如何转换矩阵，使得大部分代码可复用训练时的批归一化和层归一化！ #
     ###########################################################################
-    # 
+    N,C,H,W=x.shape
+    x_reshaped=x.reshape(N,G,C//G,H,W)
+    x_mean=np.mean(x_reshaped,axis=(2,3,4),keepdims=True)
+    x_var=np.var(x_reshaped,axis=(2,3,4),keepdims=True)
+    x_norm=(x_reshaped - x_mean)/np.sqrt(x_var+eps)
+    x_norm=x_norm.reshape(N,C,H,W)
+    out=gamma*x_norm+beta
+    cache=(x_reshaped,x_norm,x_mean,x_var,gamma,beta,eps,G)
+
     ###########################################################################
     #                             你的代码结束                                 #
     ###########################################################################
@@ -712,7 +726,28 @@ def spatial_groupnorm_backward(dout, cache):
     # 实现空间组归一化的反向传播。                                              #
     # 这与层归一化的实现极其相似。                                              #
     ###########################################################################
-    # 
+    x_reshaped, x_norm, x_mean, x_var, gamma, beta, eps, G = cache
+    N, C, H, W = dout.shape
+    
+    # 计算 dbeta 和 dgamma
+    dbeta = np.sum(dout, axis=(0, 2, 3), keepdims=True)
+    dgamma = np.sum(dout * x_norm, axis=(0, 2, 3), keepdims=True)
+    
+    # 计算 dx_norm（reshape 到组的形状）
+    dx_norm = (dout * gamma).reshape(N, G, C//G, H, W)
+    
+    # 组归一化的反向传播（类似层归一化，但在组维度上）
+    x_mu = x_reshaped - x_mean
+    std_inv = 1.0 / np.sqrt(x_var + eps)
+    group_size = (C//G) * H * W
+    
+    dx_reshaped = (1.0 / group_size) * std_inv * (
+        group_size * dx_norm
+        - np.sum(dx_norm, axis=(2, 3, 4), keepdims=True)
+        - x_mu * (std_inv ** 2) * np.sum(dx_norm * x_mu, axis=(2, 3, 4), keepdims=True)
+    )
+    
+    dx = dx_reshaped.reshape(N, C, H, W)
     ###########################################################################
     #                             你的代码结束                                 #
     ###########################################################################
