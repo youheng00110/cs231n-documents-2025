@@ -1,0 +1,35 @@
+# 数据集文件
+*.h5
+*.hdf5
+
+# CIFAR-10 数据集
+cifar-10-batches-py/
+cifar-10-python.tar.gz
+
+# COCO 数据集相关
+coco_captioning/
+*.json
+train2014_urls.txt
+val2014_urls.txt
+
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pyc
+
+# 编译文件
+*.c
+*.o
+*.so
+build/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*-checkpoint.ipynb
+
+# 操作系统相关
+.DS_Store
+Thumbs.db
