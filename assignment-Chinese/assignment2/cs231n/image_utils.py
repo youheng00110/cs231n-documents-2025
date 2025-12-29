@@ -73,7 +73,17 @@ def image_from_url(url):
         with open(fname, "wb") as ff:
             ff.write(f.read())  # 将URL内容写入临时文件
         img = imread(fname)  # 读取临时文件中的图像
-        os.remove(fname)  # 删除临时文件
+        # 在Windows上，需要短暂延迟以确保文件句柄被释放
+        try:
+            os.remove(fname)  # 删除临时文件
+        except (PermissionError, OSError):
+            # 如果删除失败，稍后再试
+            import time
+            time.sleep(0.1)
+            try:
+                os.remove(fname)
+            except (PermissionError, OSError):
+                pass  # 如果仍然失败，忽略错误（临时文件会在系统清理时删除）
         return img
     except urllib.error.URLError as e:
         print("URL错误: ", e.reason, url)

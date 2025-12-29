@@ -125,7 +125,18 @@ class CaptioningRNN:
         #                                                                                        #
         # 也不需要实现反向传播。                                                                  #
         #########################################################################################
-        # 
+        # (1) 初始隐藏状态
+        h0 = features @ W_proj + b_proj  # 形状为(N, H)
+        # (2) 词嵌入
+        x=W_embed[captions_in]  # 形状为(N, T, W)
+        # (3) RNN
+        h=rnn_forward(x,h0,Wx,Wh,b)  # 形状为(N, T, H)
+        # (4) 时间仿射变换
+        scores=temporal_affine_forward(h,W_vocab,b_vocab)  # 形状为(N, T, V)
+        # (5) 时间softmax损失
+        loss=temporal_softmax_loss(scores,captions_out,mask)
+        
+
         ############################################################################
         #                             你的代码结束                                 #
         ############################################################################
