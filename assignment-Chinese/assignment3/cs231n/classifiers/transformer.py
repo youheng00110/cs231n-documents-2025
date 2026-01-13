@@ -249,7 +249,16 @@ class VisionTransformer(nn.Module):
         # 4. 对补丁向量进行平均池化，为每个图像获取一个特征向量。可以使用torch.mean。  #
         # 5. 将其通过线性层生成类别logits。                                         #
         ############################################################################
-
+        # 1. 将输入图像转换为补丁向量序列
+        x=self.patch_embed(x)  # (N, num_patches, embed_dim)
+        # 2. 添加位置编码以保留空间信息
+        x=self.positional_encoding(x)  # (N, num_patches, embed_dim)
+        # 3. 将序列通过Transformer编码器
+        x=self.transformer(x)  # (N, num_patches, embed_dim)
+        # 4. 对补丁向量进行平均池化，为每个图像获取一个特征向量
+        x=torch.mean(x,dim=1)   # (N, embed_dim)
+        # 5. 将其通过线性层生成类别logits
+        logits=self.head(x)  # (N, num_classes)
         ############################################################################
         #                             代码结束部分                                  #
         ############################################################################

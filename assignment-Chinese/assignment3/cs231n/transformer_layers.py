@@ -312,15 +312,34 @@ class PatchEmbedding(nn.Module):
         N, C, H, W = x.shape
         assert H == self.img_size and W == self.img_size, \
             f"预期图像尺寸为({self.img_size}, {self.img_size})，但得到({H}, {W})"
-        out = torch.zeros(N, self.embed_dim)
 
         ############################################################################
-        # 任务：将图像分割为形状为(patch_size x patch_size x C)的非重叠补丁，并将它们重排
+        # 任务：将图像分割为形状为(C, patch_size, patch_size)的非重叠补丁，并将它们重排
         # 为形状为(N, num_patches, patch_dim)的张量。不要使用for循环。
         # 相反，你可能会发现torch.reshape和torch.permute对这一步有帮助。一旦补丁被展平，
         # 使用投影层将它们嵌入到潜在向量中。
         ############################################################################
-
+        # 将输入图像划分为补丁
+        # x 形状为 (N, C, H, W)
+        # H = patch_H * patch_size, W = patch_W * patch_size
+        patch_H = H // self.patch_size
+        patch_W = W // self.patch_size
+        
+        # 1. 重构形状以便后续 permute
+        # (N, C, patch_H, patch_size, patch_W, patch_size)
+        patches = x.reshape(N, C, patch_H, self.patch_size, patch_W, self.patch_size)
+        
+        # 2. 调整维度顺序使得每个补丁被展平
+        # 注意：这里需要按照 (N, patch_H, patch_W, C, patch_size, patch_size) 重排
+        # 这样在展平最后三个维度时，数据排列符合要求
+        patches = patches.permute(0, 2, 4, 1, 3, 5) # (N, patch_H, patch_W, C, PS, PS)
+        
+        # 3. 展平补丁并重塑为序列
+        # (N, num_patches, patch_dim) 其中 patch_dim = C * PS * PS
+        patches = patches.reshape(N, self.num_patches, self.patch_dim)
+        
+        # 4. 线性映射到嵌入维度
+        out = self.proj(patches) # (N, num_patches, embed_dim)
         ############################################################################
         #                             代码结束部分                                  #
         ############################################################################
@@ -365,7 +384,17 @@ class TransformerEncoderLayer(nn.Module):
         ############################################################################
         # 任务：通过应用自注意力，然后是前馈块来实现编码器层。代码将与解码器层非常相似。
         ############################################################################
+        # 自注意力块
+        shortcut = src
+        src = self.self_attn(query=src, key=src, value=src, attn_mask=src_mask)
+        src = self.dropout_self(src)
+        src = self.norm_self(src + shortcut)
 
+        # 前馈网络块
+        shortcut = src
+        src = self.ffn(src)
+        src = self.dropout_ffn(src)
+        src = self.norm_ffn(src + shortcut)
         ############################################################################
         #                             代码结束部分                                  #
         ############################################################################
