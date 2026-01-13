@@ -82,7 +82,22 @@ class CaptioningTransformer(nn.Module):
         #     有助于准备这个掩码。                                                  #
         #  3) 最后，在文本和图像嵌入以及tgt_mask上应用解码器特征。将输出投影到每个标记的分数#
         ############################################################################
-
+        # 1. 嵌入字幕并添加位置编码
+        captions_embedded = self.embedding(captions)  # (N, T) → (N, T, W)
+        captions_pos_encoded = self.positional_encoding(captions_embedded)  # 添加位置信息
+        
+        # 2. 将图像特征投影到相同的维度
+        features_projected = self.visual_projection(features)  # (N, D) → (N, W)
+        features_projected = features_projected.unsqueeze(1)  # (N, W) → (N, 1, W) 添加序列维度
+        
+        # 3. 创建掩码以屏蔽未来时间步（因果掩码）
+        tgt_mask = torch.tril(torch.ones((T, T))).to(torch.bool)  # 下三角矩阵
+        
+        # 4. 应用Transformer解码器
+        decoder_output = self.transformer(captions_pos_encoded, features_projected, tgt_mask=tgt_mask)  # (N, T, W)
+        
+        # 5. 投影到词汇表大小，得到每个位置的词预测分数
+        scores = self.output(decoder_output)  # (N, T, W) → (N, T, V)
         ############################################################################
         #                             代码结束部分                                  #
         ############################################################################

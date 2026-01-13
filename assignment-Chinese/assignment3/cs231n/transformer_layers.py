@@ -32,7 +32,10 @@ class PositionalEncoding(nn.Module):
         # embed_dim。当然，这种精确的规定在一定程度上是任意的，但这是自动评分器所期望的。
         # 参考：我们的解决方案少于5行代码。
         ############################################################################
-
+        position= torch.arange(0, max_len).unsqueeze(1)  # (max_len, 1)
+        div_term= torch.exp(torch.arange(0, embed_dim, 2) * (-math.log(10000.0) / embed_dim))  # (embed_dim/2,)
+        pe[:,:,0::2]=torch.sin(position * div_term)  # 偶数索引
+        pe[:,:,1::2]=torch.cos(position*div_term)   # 奇数索引
         ############################################################################
         #                             代码结束部分                                  #
         ############################################################################
@@ -56,7 +59,8 @@ class PositionalEncoding(nn.Module):
         # 任务：索引到位置编码数组中，并将相应的编码添加到输入序列。别忘了之后应用dropout。
         # 这只需要几行代码。
         ############################################################################
-
+        output = x + self.pe[:, :S, :]  # 将位置编码加到输入上
+        output = self.dropout(output)   # 应用dropout
         ############################################################################
         #                             代码结束部分                                  #
         ############################################################################
@@ -135,7 +139,23 @@ class MultiHeadAttention(nn.Module):
         #  3) 对于应用attn_mask，思考如何修改分数以防止某个值影响输出。具体来说，PyTorch的
         #     masked_fill函数可能会有用。
         ############################################################################
-
+        #转换维度
+        K =self.key(key).reshape(N, T, self.n_head, self.head_dim).permute(0,2,1,3)  #(N,H,T,E/H)
+        V =self.value(value).reshape(N, T, self.n_head, self.head_dim).permute(0,2,1,3)  #(N,H,T,E/H)
+        Q =self.query(query).reshape(N, S, self.n_head, self.head_dim).permute(0,2,1,3)  #(N,H,S,E/H)
+        #计算注意力分数
+        scores= (torch.matmul(Q,K.permute(0,1,3,2)))/math.sqrt(self.head_dim)  #(N,H,S,T)
+        #应用掩码
+        if attn_mask is not None:
+            scores = scores.masked_fill(attn_mask==0, float('-inf'))
+        #softmax计算注意力权重
+        attn_weights = F.softmax(scores, dim=-1)  #(N,H,S,T)
+        attn_weights = self.attn_drop(attn_weights)
+        #加权求和
+        output_heads = torch.matmul(attn_weights, V)  #(N,H,S,E/H)
+        output_heads = output_heads.permute(0,2,1,3).reshape(N, S, E)  #(N,S,E)
+        #线性投影
+        output = self.proj(output_heads)  #(N,S,E)
         ############################################################################
         #                             代码结束部分                                  #
         ############################################################################
@@ -231,7 +251,19 @@ class TransformerDecoderLayer(nn.Module):
         # 任务：完成解码器层，实现剩余两个子层：(1)使用编码器输出作为memory的交叉注意力块，
         # (2)前馈块。每个块应遵循上面自注意力实现的相同结构。
         ############################################################################
-
+        # 交叉注意力块：解码器关注编码器输出
+        shortcut = tgt  # 保存残差
+        tgt = self.cross_attn(query=tgt, key=memory, value=memory)  # Q来自解码器，K/V来自编码器
+        tgt = self.dropout_cross(tgt)  # Dropout
+        tgt = tgt + shortcut  # 残差连接
+        tgt = self.norm_cross(tgt)  # LayerNorm
+        
+        # 前馈网络块：对每个位置独立进行非线性变换
+        shortcut = tgt  # 保存残差
+        tgt = self.ffn(tgt)  # 两层全连接 + GELU
+        tgt = self.dropout_ffn(tgt)  # Dropout
+        tgt = tgt + shortcut  # 残差连接
+        tgt = self.norm_ffn(tgt)  # LayerNorm
         ############################################################################
         #                             代码结束部分                                  #
         ############################################################################
