@@ -178,7 +178,11 @@ class Unet(nn.Module):
             # Downsample块输入通道为dim_in，输出通道为dim_out。
             # 为了能加载预训练权重，请严格遵循此ModuleList结构。
             ##################################################################
-
+            down_block = nn.ModuleList([
+                ResnetBlock(dim_in, dim_in, context_dim=context_dim),
+                ResnetBlock(dim_in, dim_in, context_dim=context_dim),
+                Downsample(dim_in, dim_out)
+            ])
             ##################################################################
             self.downs.append(down_block)
 
@@ -201,7 +205,11 @@ class Unet(nn.Module):
             # 这将与对应的下采样块镜像对称。
             # 不要忘记通过将输入与下采样路径的跳跃连接拼接，使两个ResnetBlock的输入通道为2*dim_out。
             ##################################################################
-
+            up_block =nn.ModuleList([
+                Upsample(dim_in, dim_out),
+                ResnetBlock(dim_out * 2, dim_out, context_dim=context_dim),
+                ResnetBlock(dim_out * 2, dim_out, context_dim=context_dim)
+            ])
             self.ups.append(up_block)
             ##################################################################
 
@@ -222,7 +230,13 @@ class Unet(nn.Module):
         # 你需要调用self.forward两次。
         # 对于无条件采样，传入`text_emb`=None。
         ##################################################################
-
+        # 有条件预测
+        eps_cond = self.forward(x, time, model_kwargs)
+        # 无条件预测
+        model_kwargs["text_emb"] = None
+        eps_uncond = self.forward(x, time, model_kwargs)
+        # 结合有条件和无条件预测
+        x = (cfg_scale + 1) * eps_cond - cfg_scale * eps_uncond
         ##################################################################
 
         return x
@@ -276,6 +290,28 @@ class Unet(nn.Module):
         #    - 每个ResNet块前，将输入与下采样路径对应的跳跃连接拼接。
         #    - 确保将上下文传入每个ResNet块。
         ##################################################################
+        skip_connections = []
+        # 下采样路径
+        for down_block in self.downs:
+            for layer in down_block:
+                if isinstance(layer, ResnetBlock):
+                    x = layer(x, context)
+                    skip_connections.append(x)
+                else:  # Downsample层（nn.Conv2d）
+                    x = layer(x)
+        # 中间块
+        x = self.mid_block1(x, context)
+        x = self.mid_block2(x, context)
+        # 上采样路径
+        for up_block in self.ups:
+            for layer in up_block:
+                if isinstance(layer, ResnetBlock):
+                    skip_x = skip_connections.pop()
+                    x = torch.cat((x, skip_x), dim=1)  # 拼接跳跃连接
+                    x = layer(x, context)
+                else:  # Upsample层（nn.Sequential）
+                    x = layer(x)
+
 
         ##################################################################
 

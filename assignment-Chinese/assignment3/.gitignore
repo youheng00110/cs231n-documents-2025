@@ -1,6 +1,9 @@
 # 数据集文件
 *.h5
 *.hdf5
+*.npz
+*.pt
+*.pkl
 
 # CIFAR-10 数据集
 cifar-10-batches-py/
@@ -9,6 +12,14 @@ cifar-10-python.tar.gz
 # COCO 数据集相关
 coco_captioning/
 *.zip
+
+# Emoji 数据集（DDPM作业）
+cs231n/datasets/emoji_data.npz
+cs231n/datasets/text_embeddings.pt
+cs231n/datasets/paraphrases_dict.pkl
+
+# ImageNet 数据
+cs231n/datasets/imagenet_val_25.npz
 
 # Python 相关
 __pycache__/

@@ -97,7 +97,9 @@ class GaussianDiffusion(nn.Module):
         # 根据公式(4)和公式(14)转换x_t和噪声以得到x_start。
         # 查看`__init__`方法中的系数，并使用`extract`函数。
         ####################################################################
-
+        c1 = extract(self.sqrt_alphas_cumprod, t, x_t.shape)
+        c2=extract(self.sqrt_one_minus_alphas_cumprod, t, x_t.shape)
+        x_start =(x_t - c2*noise)/c1
         ####################################################################
         return x_start
 
@@ -116,7 +118,9 @@ class GaussianDiffusion(nn.Module):
         # 根据公式(4)和公式(14)转换x_t和噪声以得到x_start。
         # 查看`__init__`方法中的系数，并使用`extract`函数。
         ####################################################################
-
+        c1 = extract(self.sqrt_alphas_cumprod, t, x_t.shape)
+        c2=extract(self.sqrt_one_minus_alphas_cumprod, t, x_t.shape)
+        pred_noise = (x_t - c1*x_start) / c2
         ####################################################################
         return pred_noise
 
@@ -167,9 +171,15 @@ class GaussianDiffusion(nn.Module):
         #   4. 使用self.q_posterior获取q(x_{t-1} | x_t, x_0)的均值和标准差，
         #      并采样x_{t-1}。
         ##################################################################
-        
-        ##################################################################
-
+        model_output = self.model(x_t, t, model_kwargs)
+        if self.objective == "pred_noise":
+            x_start = self.predict_start_from_noise(x_t, t, model_output)
+        else:
+            x_start = model_output
+        x_start = x_start.clamp(-1.0, 1.0)
+        posterior_mean, posterior_std = self.q_posterior(x_start, x_t, t)
+        noise = torch.randn_like(x_t)
+        x_tm1 = posterior_mean + posterior_std * noise
         return x_tm1
 
     @torch.no_grad()
@@ -211,7 +221,9 @@ class GaussianDiffusion(nn.Module):
         # (3) 回想一下，从N(mu, sigma^2)中采样可以表示为：x_t = mu + sigma * noise，其中噪声采样自N(0, 1)。
         # 大约3行代码。
         ####################################################################
-
+        c1 = extract(self.sqrt_alphas_cumprod, t, x_start.shape)
+        c2=extract(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape)
+        x_t = c1* x_start+ c2* noise
         ####################################################################
         return x_t
 
@@ -232,7 +244,9 @@ class GaussianDiffusion(nn.Module):
         # 最后，计算加权MSE损失。
         # 大约3-4行代码。
         ####################################################################
-
+        x_t = self.q_sample(x_start, t, noise)
+        model_output = self.model(x_t, t, model_kwargs)
+        loss = (loss_weight * (model_output - target) ** 2).mean()
         ####################################################################
 
         return loss
