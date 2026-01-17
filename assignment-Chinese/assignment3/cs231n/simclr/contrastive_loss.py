@@ -18,7 +18,8 @@ def sim(z_i, z_j):
     #                                                                            #
     # 提示：torch.linalg.norm 可能会有帮助。                                      #
     ##############################################################################
-    
+    # 归一化点积 = (z_i · z_j) / (||z_i|| * ||z_j||)
+    norm_dot_product = (z_i @ z_j.T).squeeze() / (torch.linalg.norm(z_i) * torch.linalg.norm(z_j))
     
     ##############################################################################
     # 你的代码结束处                                                             #
@@ -54,7 +55,21 @@ def simclr_loss_naive(out_left, out_right, tau):
         #                                                                            #
         # 提示：计算 l(k, k+N) 和 l(k+N, k)。                                         #
         ##############################################################################
-        
+        # 计算 l(k, k+N)
+        numerator_1 =torch.exp(sim(z_k.unsqueeze(0), z_k_N.unsqueeze(0)) / tau)
+        num_1 = 0
+        for i in range(0,2*N):
+            if i != k:
+                num_1+=torch.exp(sim(z_k.unsqueeze(0),out[i].unsqueeze(0)) / tau)
+        numerator_2=torch.exp(sim(z_k_N.unsqueeze(0), z_k.unsqueeze(0)) / tau)
+        num_2 = 0
+        for i in range(0,2*N):
+            if i != k+N:
+                num_2+=torch.exp(sim(z_k_N.unsqueeze(0),out[i].unsqueeze(0)) / tau)
+        loss_1 = -torch.log(numerator_1 / num_1)
+        loss_2 = -torch.log(numerator_2 / num_2)
+        total_loss += loss_1 + loss_2
+
         ##############################################################################
         # 你的代码结束处                                                             #
         ##############################################################################
@@ -83,7 +98,17 @@ def sim_positive_pairs(out_left, out_right):
     #                                                                            #
     # 提示：torch.linalg.norm 可能会有帮助。                                      #
     ##############################################################################
+    # 方法1: 逐元素相乘后按行求和，再除以范数
+    # 计算点积 (按行)
+    dot_products = (out_left * out_right).sum(dim=1)  # [N]
     
+    # 计算范数
+    norm_left = torch.linalg.norm(out_left, dim=1)   # [N]
+    norm_right = torch.linalg.norm(out_right, dim=1) # [N]
+    
+    # 归一化点积
+    pos_pairs = dot_products / (norm_left * norm_right)  # [N]
+    pos_pairs = pos_pairs.unsqueeze(1)  # [N, 1]
     
     ##############################################################################
     # 你的代码结束处                                                             #
@@ -106,7 +131,11 @@ def compute_sim_matrix(out):
     ##############################################################################
     # 你的代码开始处                                                             #
     ##############################################################################
-    
+    #矩阵乘法
+    #normalize
+    norms = torch.linalg.norm(out, dim=1, keepdim=True)  # 计算每个向量的范数，形状为 (2N, 1)
+    normalized_out = out / norms  # 归一化每个向量，形状为 (2N, D)
+    sim_matrix = normalized_out @ normalized_out.T  # 计算归一化点积矩阵，形状为 (2N, 2N)
 
     
     ##############################################################################
@@ -134,7 +163,7 @@ def simclr_loss_vectorized(out_left, out_right, tau, device='cuda'):
     
     # 步骤 1：使用 sim_matrix 计算所有增强样本的分母值。
     # 提示：计算 e^(sim / tau) 并存储到 exponential 中，其形状应为 2N x 2N。
-    exponential = None
+    exponential = torch.exp(sim_matrix / tau)  # [2*N, 2*N]
     
     # 这个二进制掩码将 k=i 的项置零。
     mask = (torch.ones_like(exponential, device=device) - torch.eye(2 * N, device=device)).to(device).bool()
@@ -143,7 +172,7 @@ def simclr_loss_vectorized(out_left, out_right, tau, device='cuda'):
     exponential = exponential.masked_select(mask).view(2 * N, -1)  # [2*N, 2*N-1]
     
     # 提示：计算所有增强样本的分母值。这应该是一个 2N x 1 向量。
-    denom = None
+    denom = exponential.sum(dim=1, keepdim=True)  # [2*N, 1]
 
     # 步骤 2：计算正样本对之间的相似度。
     # 你可以通过两种方式实现：
@@ -152,11 +181,13 @@ def simclr_loss_vectorized(out_left, out_right, tau, device='cuda'):
     
     
     # 步骤 3：计算所有增强样本的分子值。
-    numerator = None
+    numerator = torch.exp(sim_positive_pairs(out_left, out_right) / tau)  # [N, 1]
+    numerator = torch.cat([numerator, numerator], dim=0)  # [2*N, 1]
     
     
     # 步骤 4：现在你已经有了所有增强样本的分子和分母，计算总损失。
-    loss = None
+    loss = -torch.log(numerator / denom)  # [2*N, 1]
+    loss = loss.mean()  # 计算平均损失，返回标量
     
     ##############################################################################
     # 你的代码结束处                                                             #

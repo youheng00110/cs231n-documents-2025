@@ -37,6 +37,12 @@ def train(model, data_loader, train_optimizer, epoch, epochs, batch_size=32, tem
         # 然后使用 simclr_loss_vectorized 计算损失。                                  #
         ##############################################################################
         
+        # 通过模型获取两个增强图像的输出
+        _, out_left = model(x_i)  # 左分支输出，返回 (feature, out)
+        _, out_right = model(x_j)  # 右分支输出，返回 (feature, out)
+        
+        # 使用向量化的 SimCLR 损失函数计算对比损失
+        loss = simclr_loss_vectorized(out_left, out_right, tau=temperature, device=device)
         
         ##############################################################################
         # 你的代码结束处                                                             #
