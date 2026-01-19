@@ -25,7 +25,7 @@ def get_similarity_no_loop(text_features, image_features):
     ############################################################################
     # 任务：计算余弦相似度。请勿使用for循环。                                 #
     ############################################################################
-
+    similarity =(text_features @ image_features.T) / (text_features.unsqueeze(1).norm(dim=2) * image_features.unsqueeze(0).norm(dim=2))
     ############################################################################
     #                             代码结束部分                                  #
     ############################################################################
@@ -54,7 +54,25 @@ def clip_zero_shot_classifier(clip_model, clip_preprocess, images,
     ############################################################################
     # 任务：为图像确定类别标签。                                              #
     ############################################################################
-
+    #文本
+    text_tokens =clip.tokenize(class_texts).to(device)
+    text_features = clip_model.encode_text(text_tokens)
+    text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+    #图像
+    image_list = []
+    for img in images:
+        img_pil = Image.fromarray(img)
+        img_preprocessed = clip_preprocess(img_pil).unsqueeze(0).to(device)
+        image_list.append(img_preprocessed)
+    image_tensor = torch.cat(image_list, dim=0)
+    image_features = clip_model.encode_image(image_tensor)
+    image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+    #相似度
+    similarity = get_similarity_no_loop(text_features, image_features)
+    #预测类别
+    top_probs, top_labels = similarity.topk(1, dim=0)
+    for i in range(top_labels.shape[1]):
+        pred_classes.append(class_texts[top_labels[0, i]])
     ############################################################################
     #                             代码结束部分                                  #
     ############################################################################
@@ -81,7 +99,18 @@ class CLIPImageRetriever:
         # 注意：此处应一次性处理所有图像，避免对每个文本查询重复计算。               #
         # 对于计算最优的实现，可能不会使用上述的相似度函数。                         #
         ############################################################################
-
+        self.device = device
+        self.clip_model = clip_model
+        self.clip_preprocess = clip_preprocess
+        image_list = []
+        for img in images:
+            img_pil = Image.fromarray(img)
+            img_preprocessed = clip_preprocess(img_pil).unsqueeze(0).to(device)
+            image_list.append(img_preprocessed)
+        image_tensor = torch.cat(image_list, dim=0)
+        self.image_features = clip_model.encode_image(image_tensor)
+        self.image_features = self.image_features / self.image_features.norm(dim=-1, keepdim=True)
+        self.device = device
         ############################################################################
         #                             代码结束部分                                  #
         ############################################################################
@@ -104,7 +133,12 @@ class CLIPImageRetriever:
         ############################################################################
         # 任务：检索前k张图像的索引。                                              #
         ############################################################################
-
+        text_token = clip.tokenize([query]).to(self.device)
+        text_feature = self.clip_model.encode_text(text_token)
+        text_feature = text_feature / text_feature.norm(dim=-1, keepdim=True)
+        similarity = get_similarity_no_loop(text_feature, self.image_features)
+        top_probs, top_labels = similarity.topk(k, dim=1)
+        top_indices = top_labels[0].tolist()
         ############################################################################
         #                             代码结束部分                                  #
         ############################################################################

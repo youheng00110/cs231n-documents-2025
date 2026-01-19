@@ -1,6 +1,7 @@
 """用于图像查看和处理的工具函数"""
 
-import urllib.request, urllib.error, urllib.parse, os, tempfile  # 用于URL请求和文件操作
+import urllib.request, urllib.error, urllib.parse  # 用于URL请求和文件操作
+from io import BytesIO  # 用于在内存中处理二进制数据
 
 import numpy as np
 from imageio import imread  # 用于读取图像
@@ -58,15 +59,13 @@ def deprocess_image(img, rescale=False):
 def image_from_url(url):
     """
     从URL读取图像。返回包含像素数据的numpy数组。
-    实现方式：将图像写入临时文件，然后再读回。有点粗糙但有效。
+    实现方式：直接将远程内容读入内存再解析，避免Windows句柄占用。
     """
     try:
-        f = urllib.request.urlopen(url)  # 打开URL
-        _, fname = tempfile.mkstemp()  # 创建临时文件
-        with open(fname, "wb") as ff:
-            ff.write(f.read())  # 将URL内容写入临时文件
-        img = imread(fname)  # 读取临时文件中的图像
-        os.remove(fname)  # 删除临时文件
+        with urllib.request.urlopen(url) as f:  # 打开URL
+            data = f.read()  # 读取全部图像字节
+        # 直接从内存缓冲区解析图片，绕开Windows无法及时删除临时文件的问题
+        img = imread(BytesIO(data))
         return img
     except urllib.error.URLError as e:
         print("URL错误: ", e.reason, url)
